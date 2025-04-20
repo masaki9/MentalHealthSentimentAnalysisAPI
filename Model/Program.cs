@@ -4,7 +4,7 @@ using static Microsoft.ML.DataOperationsCatalog;
 using System.Diagnostics;
 
 
-string _dataPath = Path.Combine(Environment.CurrentDirectory, "Data", "MentalHealthData.csv");
+var _dataPath = Path.Combine(Environment.CurrentDirectory, "..", "Data", "MentalHealthData.csv");
 var mlContext = new MLContext(); // Create a new MLContext
 var splitDataView = LoadData(mlContext); // Load data and split into training and testing sets
 var model = BuildAndTrainModel(mlContext, splitDataView.TrainSet); // Build and train the model
@@ -12,7 +12,7 @@ Evaluate(mlContext, model, splitDataView.TestSet); // Evaluate the model
 GetPredictionForMentalHealth(mlContext, model, "I feel anxious and overwhelmed."); // Make a prediction
 
 // Save the trained model
-string modelPath = Path.Combine(Environment.CurrentDirectory, "Data", "MentalHealthModel.zip");
+string modelPath = Path.Combine(Environment.CurrentDirectory, "..", "Data", "MentalHealthModel.zip");
 mlContext.Model.Save(model, splitDataView.TrainSet.Schema, modelPath);
 Console.WriteLine($"Model saved to {modelPath}");
 
