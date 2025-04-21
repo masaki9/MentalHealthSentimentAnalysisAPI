@@ -1,5 +1,5 @@
 ﻿using Microsoft.ML;
-using MentalHealthSentimentAnalysisAPI;
+using MentalHealthSentimentAnalysisAPI.Model;
 using static Microsoft.ML.DataOperationsCatalog;
 using System.Diagnostics;
 

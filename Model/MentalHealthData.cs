@@ -2,7 +2,7 @@
 
 using Microsoft.ML.Data;
 
-namespace MentalHealthSentimentAnalysisAPI;
+namespace MentalHealthSentimentAnalysisAPI.Model;
 
 public class MentalHealthData
 {
