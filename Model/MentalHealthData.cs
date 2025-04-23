@@ -15,12 +15,3 @@ public class MentalHealthData
     [LoadColumn(2), ColumnName("Label")]
     public string? Status { get; set; }
 }
-
-public class MentalHealthPrediction
-{
-    [ColumnName("PredictedLabel")]
-    public string? Prediction { get; set; }
-
-    [ColumnName("Score")]
-    public float[]? Score { get; set; } // Array of scores for each class
-}

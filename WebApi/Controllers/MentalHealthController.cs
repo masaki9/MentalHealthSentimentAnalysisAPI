@@ -1,8 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.ML;
-using MentalHealthSentimentAnalysisAPI.Model;
+using MentalHealthSentimentAnalysisAPI.WebApi.Services;
 
-namespace WebApi.Controllers;
+namespace MentalHealthSentimentAnalysisAPI.WebApi.Controllers;
 
 /// <summary>
 /// Controller for analyzing mental health statements.
@@ -11,34 +10,30 @@ namespace WebApi.Controllers;
 [Route("api/[controller]")]
 public class MentalHealthController : ControllerBase
 {
-    private readonly PredictionEnginePool<MentalHealthData, MentalHealthPrediction> _engine;
+    private readonly ISentimentAnalysisService _sentimentAnalysisService;
 
-    /// <summary>
-    /// Constructor for MentalHealthController.
-    /// </summary>
-    /// <param name="engine">Prediction engine pool for mental health data.</param>
-    public MentalHealthController(PredictionEnginePool<MentalHealthData, MentalHealthPrediction> engine)
+    public MentalHealthController(ISentimentAnalysisService service)
     {
-        _engine = engine;
+        _sentimentAnalysisService = service;
     }
 
     /// <summary>
-    /// Analyzes a mental health statement and predicts its status.
+    /// Analyzes a mental health statement and returns the predicted status and scores.
     /// </summary>
-    /// <param name="input">The input data containing the statement.</param>
-    /// <returns>An ActionResult containing the prediction result.</returns>
+    /// <param name="statement">Statement to analyze.</param>
+    /// <returns>Predicted status and scores.</returns>
     [HttpPost("analyze")]
-    public ActionResult Analyze([FromBody] MentalHealthData input)
+    public ActionResult Analyze([FromBody] string statement)
     {
-        if (string.IsNullOrWhiteSpace(input.Statement))
+        if (string.IsNullOrWhiteSpace(statement))
         {
             return BadRequest("Statement cannot be null or empty.");
         }
 
-        var result = _engine.Predict(input);
+        var result = _sentimentAnalysisService.Analyze(statement);
         return Ok(new
         {
-            statement = input.Statement,
+            statement,
             predictedStatus = result.Prediction,
             scores = result.Score
         });

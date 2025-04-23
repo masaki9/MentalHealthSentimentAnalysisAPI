@@ -1,7 +1,8 @@
 using Microsoft.Extensions.ML;
 using MentalHealthSentimentAnalysisAPI.Model;
+using MentalHealthSentimentAnalysisAPI.WebApi.Services;
 
-namespace WebApi;
+namespace MentalHealthSentimentAnalysisAPI.WebApi;
 
 /// <summary>
 /// The main entry point for the application.
@@ -14,6 +15,8 @@ public class Program
 
         // Listen on the specified HTTP and HTTPS ports
         builder.WebHost.UseUrls("http://localhost:5000", "https://localhost:5001");
+
+        builder.Services.AddScoped<ISentimentAnalysisService, SentimentAnalysisService>(); // Register the service
 
         // Add MVC and Swagger
         builder.Services.AddControllers();
