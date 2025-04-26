@@ -26,20 +26,6 @@ public class ModelTrainer
     }
 
     /// <summary>
-    /// Build a shared base pipeline for both training and inference.
-    /// </summary>
-    /// <param name="mlContext">The MLContext instance.</param>
-    /// <returns>A base pipeline estimator.</returns>
-    private IEstimator<ITransformer> BuildBasePipeline(MLContext mlContext)
-    {
-        var estimator = mlContext.Transforms.Conversion.MapValueToKey(outputColumnName: "Label") // Convert the label to a key type
-            .Append(mlContext.Transforms.Text.FeaturizeText(
-                outputColumnName: "Features",
-                inputColumnName: nameof(MentalHealthData.Statement))); // Convert text to features
-        return estimator;
-    }
-
-    /// <summary>
     /// Build a pipeline to use for training.
     /// The pipeline includes a cache checkpoint to speed up training.
     /// </summary>
@@ -47,24 +33,13 @@ public class ModelTrainer
     /// <returns>A training pipeline estimator.</returns>
     private IEstimator<ITransformer> BuildTrainingPipeline(MLContext mlContext)
     {
-        var estimator = BuildBasePipeline(mlContext)
+        var estimator = mlContext.Transforms.Conversion.MapValueToKey(outputColumnName: "Label") // Convert the label to a key type
+            .Append(mlContext.Transforms.Text.FeaturizeText(
+                outputColumnName: "Features",
+                inputColumnName: nameof(MentalHealthData.Statement))) // Convert text to features
             .AppendCacheCheckpoint(mlContext) // Cache the data for faster training
             .Append(mlContext.MulticlassClassification.Trainers.NaiveBayes(labelColumnName: "Label", featureColumnName: "Features"))
             .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel")); // Convert the predicted label back to its original value
-        return estimator;
-    }
-
-    /// <summary>
-    /// Build a pipeline to use for inference.
-    /// No cache checkpoint is added to save memory and ensure the model is as light as possible.
-    /// </summary>
-    /// <param name="mlContext">The MLContext instance.</param>
-    /// <returns>An inference pipeline estimator.</returns>
-    private IEstimator<ITransformer> BuildInferencePipeline(MLContext mlContext)
-    {
-        var estimator = BuildBasePipeline(mlContext)
-            .Append(mlContext.MulticlassClassification.Trainers.NaiveBayes(labelColumnName: "Label", featureColumnName: "Features"))
-            .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
         return estimator;
     }
 
@@ -146,10 +121,7 @@ public class ModelTrainer
 
         Console.WriteLine("=============== Training the model ===============");
         var watch = Stopwatch.StartNew();
-
-        // Fit training pipeline
-        var trainingModel = BuildTrainingPipeline(mlContext).Fit(splitDataView.TrainSet);
-
+        var trainingModel = BuildTrainingPipeline(mlContext).Fit(splitDataView.TrainSet); // Fit training pipeline
         watch.Stop();
         var elapsedMs = watch.ElapsedMilliseconds;
         Console.WriteLine($"Training time: {elapsedMs} ms");
@@ -159,10 +131,8 @@ public class ModelTrainer
         Evaluate(mlContext, trainingModel, splitDataView.TestSet); // Evaluate the model
         GetPredictionForMentalHealth(mlContext, trainingModel, "I feel anxious and overwhelmed."); // Make a prediction
 
-        // Fit and save inference pipeline
-        var inferenceModel = BuildInferencePipeline(mlContext).Fit(splitDataView.TrainSet);
         string modelPath = Path.Combine(Environment.CurrentDirectory, "..", "Data", "MentalHealthModel.zip");
-        mlContext.Model.Save(inferenceModel, splitDataView.TrainSet.Schema, modelPath);
+        mlContext.Model.Save(trainingModel, splitDataView.TrainSet.Schema, modelPath);
         Console.WriteLine($"Model saved to {modelPath}");
     }
 
