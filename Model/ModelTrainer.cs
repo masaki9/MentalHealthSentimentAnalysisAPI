@@ -1,4 +1,6 @@
 ﻿using Microsoft.ML;
+using Microsoft.ML.Transforms.Text;
+using Microsoft.ML.Transforms;
 using static Microsoft.ML.DataOperationsCatalog;
 using System.Diagnostics;
 
@@ -25,22 +27,60 @@ public class ModelTrainer
         return splitDataView;
     }
 
+
     /// <summary>
-    /// Build a pipeline to use for training.
-    /// The pipeline includes a cache checkpoint to speed up training.
+    /// Build the training pipeline for the model.
     /// </summary>
     /// <param name="mlContext">The MLContext instance.</param>
+    /// <param name="ngramLength">The length of the n-grams to be used.</param>
+    /// <param name="useAllLengths">Whether to store all n-gram lengths up to ngramLength, or only ngramLength.</param>
+    /// <param name="maximumNgramsCount">The maximum number of n-grams to be used for each level of n-grams.</param>
+    /// <param name="removeStopWords">Whether to remove stop words.</param>
     /// <returns>A training pipeline estimator.</returns>
-    private IEstimator<ITransformer> BuildTrainingPipeline(MLContext mlContext)
+    public IEstimator<ITransformer> BuildTrainingPipeline(MLContext mlContext, int ngramLength, bool useAllLengths,
+                                                    int[] maximumNgramsCount, bool removeStopWords)
     {
-        var estimator = mlContext.Transforms.Conversion.MapValueToKey(outputColumnName: "Label") // Convert the label to a key type
-            .Append(mlContext.Transforms.Text.FeaturizeText(
-                outputColumnName: "Features",
-                inputColumnName: nameof(MentalHealthData.Statement))) // Convert text to features
-            .AppendCacheCheckpoint(mlContext) // Cache the data for faster training
-            .Append(mlContext.MulticlassClassification.Trainers.NaiveBayes(labelColumnName: "Label", featureColumnName: "Features"))
-            .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel")); // Convert the predicted label back to its original value
-        return estimator;
+        var estimator = mlContext.Transforms.DropColumns(nameof(MentalHealthData.Id)); // Drop the Id column
+
+        var labelMap = mlContext.Transforms.Conversion.MapValueToKey("Label"); // Convert the label to a key type
+
+        // Configure text featurization options
+        var tfOptions = new TextFeaturizingEstimator.Options
+        {
+            // Text normalization options
+            CaseMode = TextNormalizingEstimator.CaseMode.Lower,
+            KeepPunctuations = false,
+            KeepNumbers = true,
+
+            // Stopwords
+            StopWordsRemoverOptions = removeStopWords
+                ? new StopWordsRemovingEstimator.Options()
+                : null,
+
+            // Ngram feature extractor for words
+            WordFeatureExtractor = new WordBagEstimator.Options
+            {
+                NgramLength = ngramLength,
+                UseAllLengths = useAllLengths,
+                MaximumNgramsCount = maximumNgramsCount
+            },
+
+            //  Turn off Ngram feature extractor to use for characters
+            CharFeatureExtractor = null
+        };
+
+        // Create text featurizing estimator with the specified options
+        var featurizer = mlContext.Transforms.Text.FeaturizeText(outputColumnName: "Features", options: tfOptions, inputColumnNames: nameof(MentalHealthData.Statement));
+
+        return estimator
+            .Append(labelMap)
+            .Append(featurizer)
+            .AppendCacheCheckpoint(mlContext)
+            .Append(mlContext.MulticlassClassification.Trainers
+                 .NaiveBayes(labelColumnName: "Label",
+                             featureColumnName: "Features"))
+            .Append(mlContext.Transforms
+                 .Conversion.MapKeyToValue("PredictedLabel"));
     }
 
     /// <summary>
@@ -121,7 +161,17 @@ public class ModelTrainer
 
         Console.WriteLine("=============== Training the model ===============");
         var watch = Stopwatch.StartNew();
-        var trainingModel = BuildTrainingPipeline(mlContext).Fit(splitDataView.TrainSet); // Fit training pipeline
+        // var trainingModel = BuildTrainingPipeline(mlContext).Fit(splitDataView.TrainSet); // Fit training pipeline
+
+        // 2) build & train with your custom n-gram settings
+        Console.WriteLine("=== Training with 2-grams and max 10k terms ===");
+        var trainingModel = BuildTrainingPipeline(
+            mlContext,
+            ngramLength: 2,
+            useAllLengths: true,
+            maximumNgramsCount: new int[] { 10000 },
+            removeStopWords: true).Fit(splitDataView.TrainSet);
+
         watch.Stop();
         var elapsedMs = watch.ElapsedMilliseconds;
         Console.WriteLine($"Training time: {elapsedMs} ms");
