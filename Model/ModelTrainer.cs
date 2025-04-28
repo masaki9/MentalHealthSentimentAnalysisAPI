@@ -1,8 +1,7 @@
 ﻿using Microsoft.ML;
 using Microsoft.ML.Transforms.Text;
-using Microsoft.ML.Transforms;
 using static Microsoft.ML.DataOperationsCatalog;
-using System.Diagnostics;
+using Microsoft.ML.Trainers;
 
 namespace MentalHealthSentimentAnalysisAPI.Model;
 
@@ -27,21 +26,18 @@ public class ModelTrainer
         return splitDataView;
     }
 
-
     /// <summary>
-    /// Build the training pipeline for the model.
+    /// Build the text featurization part of the pipeline.
     /// </summary>
     /// <param name="mlContext">The MLContext instance.</param>
     /// <param name="ngramLength">The length of the n-grams to be used.</param>
     /// <param name="useAllLengths">Whether to store all n-gram lengths up to ngramLength, or only ngramLength.</param>
     /// <param name="maximumNgramsCount">The maximum number of n-grams to be used for each level of n-grams.</param>
     /// <param name="removeStopWords">Whether to remove stop words.</param>
-    /// <returns>A training pipeline estimator.</returns>
-    public IEstimator<ITransformer> BuildTrainingPipeline(MLContext mlContext, int ngramLength, bool useAllLengths,
-                                                    int[] maximumNgramsCount, bool removeStopWords)
+    /// <returns>A text featurization estimator.</returns>
+    public IEstimator<ITransformer> BuildTextFeaturizer(MLContext mlContext, int ngramLength, bool useAllLengths, int[] maximumNgramsCount, bool removeStopWords)
     {
         var estimator = mlContext.Transforms.DropColumns(nameof(MentalHealthData.Id)); // Drop the Id column
-
         var labelMap = mlContext.Transforms.Conversion.MapValueToKey("Label"); // Convert the label to a key type
 
         // Configure text featurization options
@@ -72,53 +68,7 @@ public class ModelTrainer
         // Create text featurizing estimator with the specified options
         var featurizer = mlContext.Transforms.Text.FeaturizeText(outputColumnName: "Features", options: tfOptions, inputColumnNames: nameof(MentalHealthData.Statement));
 
-        return estimator
-            .Append(labelMap)
-            .Append(featurizer)
-            .AppendCacheCheckpoint(mlContext)
-            .Append(mlContext.MulticlassClassification.Trainers
-                 .NaiveBayes(labelColumnName: "Label",
-                             featureColumnName: "Features"))
-            .Append(mlContext.Transforms
-                 .Conversion.MapKeyToValue("PredictedLabel"));
-    }
-
-    /// <summary>
-    /// Evaluate the model using the test data.
-    /// </summary>
-    /// <param name="mlContext">The MLContext instance.</param>
-    /// <param name="model">The trained model.</param>
-    /// <param name="splitTestSet">The test data.</param>
-    /// <returns>None</returns>
-    public void Evaluate(MLContext mlContext, ITransformer model, IDataView splitTestSet)
-    {
-        var cachedTestData = mlContext.Data.Cache(splitTestSet); // Cache the test set for faster evaluation
-
-        Console.WriteLine(">>> Starting Evaluate: Transforming test set...");
-        var watch = Stopwatch.StartNew();
-        var predictions = model.Transform(cachedTestData); // Transform the test set
-        watch.Stop();
-        Console.WriteLine($">>> Transform took: {watch.ElapsedMilliseconds} ms");
-
-        Console.WriteLine(">>> Now computing metrics...");
-        watch.Restart();
-        var metrics = mlContext.MulticlassClassification.Evaluate(
-                predictions,
-                labelColumnName: "Label",
-                scoreColumnName: "Score",
-                predictedLabelColumnName: "PredictedLabel"
-            ); // Evaluate the model using the test set
-        watch.Stop();
-        Console.WriteLine($">>> Evaluate(...) took: {watch.ElapsedMilliseconds} ms");
-
-        // Print evaluation metrics
-        Console.WriteLine("=============== Evaluating Model ===============");
-        Console.WriteLine($"Log Loss: {metrics.LogLoss}");
-        Console.WriteLine($"Log Loss Reduction: {metrics.LogLossReduction}");
-        Console.WriteLine($"Macro Average Accuracy: {metrics.MacroAccuracy}");
-        Console.WriteLine($"Micro Average Accuracy: {metrics.MicroAccuracy}");
-        Console.WriteLine($"Top K Accuracy: {metrics.TopKAccuracy}");
-        Console.WriteLine("=============== End of evaluation ===============");
+        return estimator.Append(labelMap).Append(featurizer);
     }
 
     /// <summary>
@@ -155,35 +105,71 @@ public class ModelTrainer
     /// <returns>None</returns>
     public void Run(string[] args)
     {
-        var dataPath = Path.Combine(Environment.CurrentDirectory, "..", "Data", "MentalHealthData.csv");
         var mlContext = new MLContext();
-        var splitDataView = LoadData(mlContext, dataPath); // Load data and split into training and testing sets
+        var dataPath = Path.Combine(Environment.CurrentDirectory, "..", "Data", "MentalHealthData.csv");
+        var splitDataView = LoadData(mlContext, dataPath);
+        var featurizer = BuildTextFeaturizer(mlContext, ngramLength: 2, useAllLengths: true,
+                                             maximumNgramsCount: new int[] { 10000 }, removeStopWords: true);
 
-        Console.WriteLine("=============== Training the model ===============");
-        var watch = Stopwatch.StartNew();
-        // var trainingModel = BuildTrainingPipeline(mlContext).Fit(splitDataView.TrainSet); // Fit training pipeline
+        // Different configurations for SDCA
+        var sdcaConfigs = new[]
+        {
+            (Name: "SDCA-default",  Opts: new SdcaMaximumEntropyMulticlassTrainer.Options {
+                LabelColumnName           = "Label",
+                FeatureColumnName         = "Features"
+            }),
+            (Name: "SDCA-l2=0.1",    Opts: new SdcaMaximumEntropyMulticlassTrainer.Options {
+                LabelColumnName           = "Label",
+                FeatureColumnName         = "Features",
+                L2Regularization          = 0.1f
+            }),
+            (Name: "SDCA-iters=50",  Opts: new SdcaMaximumEntropyMulticlassTrainer.Options {
+                LabelColumnName           = "Label",
+                FeatureColumnName         = "Features",
+                MaximumNumberOfIterations =  50
+            }),
+            (Name: "SDCA-tol=1e-2",  Opts: new SdcaMaximumEntropyMulticlassTrainer.Options {
+                LabelColumnName           = "Label",
+                FeatureColumnName         = "Features",
+                ConvergenceTolerance      = 1e-2f
+            }),
+        };
 
-        // 2) build & train with your custom n-gram settings
-        Console.WriteLine("=== Training with 2-grams and max 10k terms ===");
-        var trainingModel = BuildTrainingPipeline(
-            mlContext,
-            ngramLength: 2,
-            useAllLengths: true,
-            maximumNgramsCount: new int[] { 10000 },
-            removeStopWords: true).Fit(splitDataView.TrainSet);
+        var cachedTest = mlContext.Data.Cache(splitDataView.TestSet); // Cache the test set for faster evaluation
 
-        watch.Stop();
-        var elapsedMs = watch.ElapsedMilliseconds;
-        Console.WriteLine($"Training time: {elapsedMs} ms");
-        Console.WriteLine("=============== End of training ===============");
-        Console.WriteLine();
+        ITransformer? bestModel = null;
+        var bestName = "";
+        var bestMacro = 0.0;
 
-        Evaluate(mlContext, trainingModel, splitDataView.TestSet); // Evaluate the model
-        GetPredictionForMentalHealth(mlContext, trainingModel, "I feel anxious and overwhelmed."); // Make a prediction
+        // Evaluate each configuration
+        foreach (var (name, opts) in sdcaConfigs)
+        {
+            Console.WriteLine($"\n=== {name} ===");
+            var trainer = mlContext.MulticlassClassification.Trainers.SdcaMaximumEntropy(opts);
+            var pipeline = featurizer.AppendCacheCheckpoint(mlContext).Append(trainer).Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel"));
+            var model = pipeline.Fit(splitDataView.TrainSet);
+            var preds = model.Transform(cachedTest);
+            var metrics = mlContext.MulticlassClassification.Evaluate(
+                                preds,
+                                labelColumnName: "Label",
+                                scoreColumnName: "Score",
+                                predictedLabelColumnName: "PredictedLabel");
 
-        string modelPath = Path.Combine(Environment.CurrentDirectory, "..", "Data", "MentalHealthModel.zip");
-        mlContext.Model.Save(trainingModel, splitDataView.TrainSet.Schema, modelPath);
-        Console.WriteLine($"Model saved to {modelPath}");
+            Console.WriteLine($"{name} : MicroAcc={metrics.MicroAccuracy:F3}, MacroAcc={metrics.MacroAccuracy:F3}, LogLoss={metrics.LogLoss:F2}");
+
+            if (metrics.MacroAccuracy > bestMacro)
+            {
+                bestMacro = metrics.MacroAccuracy;
+                bestModel = model;
+                bestName = name;
+            }
+        }
+
+        // Save the best model
+        var modelPath = Path.Combine(Environment.CurrentDirectory, "..", "Data", "MentalHealthModel.zip");
+        Console.WriteLine($"\n>>> Saving best model '{bestName}' " + $"(MacroAcc={bestMacro:F3}) to {modelPath}...");
+        mlContext.Model.Save(bestModel!, splitDataView.TrainSet.Schema, modelPath);
+        Console.WriteLine(">>> Model saved!");
     }
 
     /// <summary>
