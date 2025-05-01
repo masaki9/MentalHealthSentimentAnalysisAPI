@@ -4,8 +4,8 @@ namespace MentalHealthSentimentAnalysisAPI.Model;
 
 public class MentalHealthData
 {
-    [LoadColumn(0)]
-    public int Id { get; set; }
+    // [LoadColumn(0)]
+    // public int Id { get; set; }
 
     [LoadColumn(1)]
     public string? Statement { get; set; }
