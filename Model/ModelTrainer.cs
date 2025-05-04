@@ -109,22 +109,9 @@ public class ModelTrainer
         var dataPath = Path.Combine(Environment.CurrentDirectory, "..", "Data", "MentalHealthData.csv");
         var splitDataView = LoadData(mlContext, dataPath);
 
-        // // Build featurizer pipeline
-        // var featurizer = BuildTextFeaturizer(mlContext, ngramLength: 2, useAllLengths: true,
-        //                                     maximumNgramsCount: new[] { 1000, 1000 }, removeStopWords: true);
-
         // Build featurizer pipeline
         var featurizer = BuildTextFeaturizerTfIdf(mlContext, ngramLength: 2, useAllLengths: true,
-                                                maximumNgramsCount: 10000, removeStopWords: true);
-
-        // Fit and transform the training set
-        var textTransform = featurizer.Fit(splitDataView.TrainSet);
-        var trainFeaturized = textTransform.Transform(splitDataView.TrainSet);
-        var cachedTrain = mlContext.Data.Cache(trainFeaturized);
-
-        // Transform and cache the test set
-        var testFeaturized = textTransform.Transform(splitDataView.TestSet);
-        var cachedTest = mlContext.Data.Cache(testFeaturized);
+                                                maximumNgramsCount: 1000, removeStopWords: true);
 
         ITransformer? bestModel = null;
         var bestName = "";
@@ -152,31 +139,34 @@ public class ModelTrainer
         };
 
         // Evaluate each trainer
-        foreach (var (name, trainer) in trainers)
+        foreach (var (name, trainerEstimator) in trainers)
         {
             Console.WriteLine($"\n=== {name} ===");
-            var pipeline = trainer.Append(trainer)
-                                  .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel", "PredictedLabel"));
+
+            var fullPipeline = featurizer.AppendCacheCheckpoint(mlContext) // Caching to speed up training
+                                         .Append(trainerEstimator)
+                                         .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel", "PredictedLabel"));
 
             var sw = Stopwatch.StartNew();
-            var model = pipeline.Fit(cachedTrain);
+            var model = fullPipeline.Fit(splitDataView.TrainSet);
             sw.Stop();
+
             Console.WriteLine($"{name} train time: {sw.Elapsed}");
 
-            var preds = model.Transform(cachedTest);
-            var metrics = mlContext.MulticlassClassification.Evaluate(
-                preds,
-                labelColumnName: "Label",
-                scoreColumnName: "Score",
-                predictedLabelColumnName: "PredictedLabel");
+            var preds = model.Transform(splitDataView.TestSet);
+            var metrics = mlContext.MulticlassClassification.Evaluate(preds,
+                                                                      labelColumnName: "Label",
+                                                                      scoreColumnName: "Score",
+                                                                      predictedLabelColumnName: "PredictedLabel");
 
-            Console.WriteLine($"{name} : MicroAcc={metrics.MicroAccuracy:F3}, " +
-                $"MacroAcc={metrics.MacroAccuracy:F3}, " + $"LogLoss={metrics.LogLoss:F2}");
+            Console.WriteLine($"{name}: MicroAcc={metrics.MicroAccuracy:F3}, " +
+                              $"MacroAcc={metrics.MacroAccuracy:F3}, LogLoss={metrics.LogLoss:F2}");
 
             if (metrics.MicroAccuracy > bestMacro)
             {
-                bestMacro = metrics.MicroAccuracy;
+                bestMacro = metrics.MacroAccuracy;
                 bestModel = model;
+                bestName = name;
             }
         }
 
