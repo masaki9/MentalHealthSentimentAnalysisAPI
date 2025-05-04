@@ -54,42 +54,48 @@ public class ModelTrainer
     /// <param name="mlContext">The MLContext instance.</param>
     /// <param name="ngramLength">The length of the n-grams to be used.</param>
     /// <param name="useAllLengths">Whether to store all n-gram lengths up to ngramLength, or only ngramLength.</param>
-    /// <param name="maximumNgramsCount">The maximum number of n-grams to be used for each level of n-grams.</param>
+    /// <param name="maximumNgramsCount">>The maximum number of n-grams to be used.</param>
     /// <param name="removeStopWords">Whether to remove stop words.</param>
     /// <returns>A text featurization estimator.</returns>
-    public IEstimator<ITransformer> BuildTextFeaturizer(MLContext mlContext, int ngramLength, bool useAllLengths, int[] maximumNgramsCount, bool removeStopWords)
+    public IEstimator<ITransformer> BuildTextFeaturizerTfIdf(MLContext mlContext, int ngramLength, bool useAllLengths, int maximumNgramsCount, bool removeStopWords)
     {
-        var labelMap = mlContext.Transforms.Conversion.MapValueToKey("Label"); // Convert the label to a key type
+        var estimator = mlContext.Transforms.Conversion.MapValueToKey("Label"); // Convert the label to a key type
 
-        // Configure text featurization options
-        var tfOptions = new TextFeaturizingEstimator.Options
+        // Normalize the text to lowercase and remove punctuations
+        var normalize = mlContext.Transforms.Text.NormalizeText(outputColumnName: "CleanText",
+                                                                inputColumnName: nameof(MentalHealthData.Statement),
+                                                                caseMode: TextNormalizingEstimator.CaseMode.Lower,
+                                                                keepDiacritics: false,
+                                                                keepPunctuations: false,
+                                                                keepNumbers: true);
+
+        // Tokenize the text into words
+        var tokenize = mlContext.Transforms.Text.TokenizeIntoWords(outputColumnName: "Tokens", inputColumnName: "CleanText");
+
+        // Remove stop-words
+        IEstimator<ITransformer> stopWordsTransform;
+        if (removeStopWords)
         {
-            // Text normalization options
-            CaseMode = TextNormalizingEstimator.CaseMode.Lower,
-            KeepPunctuations = false,
-            KeepNumbers = true,
+            stopWordsTransform = mlContext.Transforms.Text.RemoveDefaultStopWords(outputColumnName: "TokensClean", inputColumnName: "Tokens");
+        }
+        else
+        {
+            // If stop-words are not to be removed, just copy the tokens
+            stopWordsTransform = mlContext.Transforms.CopyColumns(outputColumnName: "TokensClean", inputColumnName: "Tokens");
+        }
 
-            // Stopwords
-            StopWordsRemoverOptions = removeStopWords
-                ? new StopWordsRemovingEstimator.Options()
-                : null,
+        // Map the tokens to keys
+        var mapToKeys = mlContext.Transforms.Conversion.MapValueToKey(outputColumnName: "TokensKey", inputColumnName: "TokensClean");
 
-            // Ngram feature extractor for words
-            WordFeatureExtractor = new WordBagEstimator.Options
-            {
-                NgramLength = ngramLength,
-                UseAllLengths = useAllLengths,
-                MaximumNgramsCount = maximumNgramsCount,
-            },
+        // Create n-grams from the tokens
+        var ngrams = mlContext.Transforms.Text.ProduceNgrams(outputColumnName: "Features",
+                                                             inputColumnName: "TokensKey",
+                                                             ngramLength: ngramLength,
+                                                             useAllLengths: useAllLengths,
+                                                             maximumNgramsCount: maximumNgramsCount,
+                                                             weighting: NgramExtractingEstimator.WeightingCriteria.TfIdf);
 
-            //  Turn off Ngram feature extractor to use for characters
-            CharFeatureExtractor = null
-        };
-
-        // Create text featurizing estimator with the specified options
-        var featurizer = mlContext.Transforms.Text.FeaturizeText(outputColumnName: "Features", options: tfOptions, inputColumnNames: nameof(MentalHealthData.Statement));
-
-        return labelMap.Append(featurizer);
+        return estimator.Append(normalize).Append(tokenize).Append(stopWordsTransform).Append(mapToKeys).Append(ngrams);
     }
 
     /// <summary>
@@ -103,9 +109,13 @@ public class ModelTrainer
         var dataPath = Path.Combine(Environment.CurrentDirectory, "..", "Data", "MentalHealthData.csv");
         var splitDataView = LoadData(mlContext, dataPath);
 
+        // // Build featurizer pipeline
+        // var featurizer = BuildTextFeaturizer(mlContext, ngramLength: 2, useAllLengths: true,
+        //                                     maximumNgramsCount: new[] { 1000, 1000 }, removeStopWords: true);
+
         // Build featurizer pipeline
-        var featurizer = BuildTextFeaturizer(mlContext, ngramLength: 2, useAllLengths: true,
-                                            maximumNgramsCount: new[] { 1000, 1000 }, removeStopWords: true);
+        var featurizer = BuildTextFeaturizerTfIdf(mlContext, ngramLength: 2, useAllLengths: true,
+                                                maximumNgramsCount: 10000, removeStopWords: true);
 
         // Fit and transform the training set
         var textTransform = featurizer.Fit(splitDataView.TrainSet);
@@ -146,7 +156,7 @@ public class ModelTrainer
         {
             Console.WriteLine($"\n=== {name} ===");
             var pipeline = trainer.Append(trainer)
-                                  .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel", "PredictedLabel")); // 
+                                  .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel", "PredictedLabel"));
 
             var sw = Stopwatch.StartNew();
             var model = pipeline.Fit(cachedTrain);
