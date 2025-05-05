@@ -72,7 +72,7 @@ public class ModelTrainer
         // Tokenize the text into words
         var tokenize = mlContext.Transforms.Text.TokenizeIntoWords(outputColumnName: "Tokens", inputColumnName: "CleanText");
 
-        // Remove stop-words
+        // Remove stopwords
         IEstimator<ITransformer> stopWordsTransform;
         if (removeStopWords)
         {
@@ -80,7 +80,7 @@ public class ModelTrainer
         }
         else
         {
-            // If stop-words are not to be removed, just copy the tokens
+            // If stopwords are not to be removed, just copy the tokens
             stopWordsTransform = mlContext.Transforms.CopyColumns(outputColumnName: "TokensClean", inputColumnName: "Tokens");
         }
 
@@ -111,44 +111,49 @@ public class ModelTrainer
 
         // Build featurizer pipeline
         var featurizer = BuildTextFeaturizerTfIdf(mlContext, ngramLength: 2, useAllLengths: true,
-                                                maximumNgramsCount: 1000, removeStopWords: true);
+                                                maximumNgramsCount: 20000, removeStopWords: true);
 
         ITransformer? bestModel = null;
         var bestName = "";
         var bestMacro = 0.0;
 
-        // Define the trainers to be evaluated
-        var trainers = new (string name, IEstimator<ITransformer> trainer)[]
+        float[] Cs = new[] { 100f, 1000f, 10000f, 100000f, 1000000f, 10000000f };
+
+        var trainerConfigs = new List<(string name, IEstimator<ITransformer> est)>();
+
+        // SDCA hyperparam sweep
+        foreach (var C in Cs)
         {
-            ("SDCA",  mlContext.MulticlassClassification.Trainers.SdcaMaximumEntropy(
-                        new SdcaMaximumEntropyMulticlassTrainer.Options {
-                            LabelColumnName   = "Label",
-                            FeatureColumnName = "Features"
-                        })),
-            ("LBFGS", mlContext.MulticlassClassification.Trainers.LbfgsMaximumEntropy(
-                        new LbfgsMaximumEntropyMulticlassTrainer.Options {
-                            LabelColumnName   = "Label",
-                            FeatureColumnName = "Features"
-                        })),
-            ("OVA-LR", mlContext.MulticlassClassification.Trainers.OneVersusAll(
-                        mlContext.BinaryClassification.Trainers.LbfgsLogisticRegression(
-                            new LbfgsLogisticRegressionBinaryTrainer.Options {
-                                LabelColumnName   = "Label",
-                                FeatureColumnName = "Features"
-                            })))
+            float l2 = 1f / C; // ML.NET L2Regularization = 1/C
+            var options = new SdcaMaximumEntropyMulticlassTrainer.Options
+            {
+                LabelColumnName = "Label",
+                FeatureColumnName = "Features",
+                L2Regularization = l2
+            };
+            trainerConfigs.Add(($"SDCA-C={C}", mlContext.MulticlassClassification.Trainers.SdcaMaximumEntropy(options)));
+        }
+
+        // Add no regularization trainer
+        var option = new SdcaMaximumEntropyMulticlassTrainer.Options
+        {
+            LabelColumnName = "Label",
+            FeatureColumnName = "Features"
         };
+        trainerConfigs.Add(($"SDCA (No Regularization)", mlContext.MulticlassClassification.Trainers.SdcaMaximumEntropy(option)));
 
         // Evaluate each trainer
-        foreach (var (name, trainerEstimator) in trainers)
+        foreach (var (name, trainerEstimator) in trainerConfigs)
         {
             Console.WriteLine($"\n=== {name} ===");
 
-            var fullPipeline = featurizer.AppendCacheCheckpoint(mlContext) // Caching to speed up training
-                                         .Append(trainerEstimator)
-                                         .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel", "PredictedLabel"));
+            var trainingPipeline = featurizer.AppendCacheCheckpoint(mlContext) // Caching to speed up training
+                                             .Append(mlContext.Transforms.FeatureSelection.SelectFeaturesBasedOnCount("Features", "Features", 3)) // Drop rare n-grams
+                                             .Append(trainerEstimator)
+                                             .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel", "PredictedLabel"));
 
             var sw = Stopwatch.StartNew();
-            var model = fullPipeline.Fit(splitDataView.TrainSet);
+            var model = trainingPipeline.Fit(splitDataView.TrainSet);
             sw.Stop();
 
             Console.WriteLine($"{name} train time: {sw.Elapsed}");
