@@ -113,7 +113,7 @@ public class ModelTrainer
         var featurizer = BuildTextFeaturizerTfIdf(mlContext, ngramLength: 2, useAllLengths: true,
                                                 maximumNgramsCount: 20000, removeStopWords: true);
 
-        ITransformer? bestModel = null;
+        IEstimator<ITransformer>? bestPipeline = null;
         var bestName = "";
         var bestMacro = 0.0;
 
@@ -121,7 +121,7 @@ public class ModelTrainer
 
         var trainerConfigs = new List<(string name, IEstimator<ITransformer> est)>();
 
-        // SDCA hyperparam sweep
+        // SDCA hyperparameter sweep
         foreach (var C in Cs)
         {
             float l2 = 1f / C; // ML.NET L2Regularization = 1/C
@@ -142,43 +142,54 @@ public class ModelTrainer
         };
         trainerConfigs.Add(($"SDCA (No Regularization)", mlContext.MulticlassClassification.Trainers.SdcaMaximumEntropy(option)));
 
+        var trainedTextFeatures = featurizer.Fit(splitDataView.TrainSet);
+        var transformedTrainSet = trainedTextFeatures.Transform(splitDataView.TrainSet);
+        var cachedTrainSet = mlContext.Data.Cache(transformedTrainSet);
+
         // Evaluate each trainer
         foreach (var (name, trainerEstimator) in trainerConfigs)
         {
             Console.WriteLine($"\n=== {name} ===");
+            var trainingPipeline = trainerEstimator.Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel", "PredictedLabel"));
 
-            var trainingPipeline = featurizer.AppendCacheCheckpoint(mlContext) // Caching to speed up training
-                                             .Append(mlContext.Transforms.FeatureSelection.SelectFeaturesBasedOnCount("Features", "Features", 3)) // Drop rare n-grams
-                                             .Append(trainerEstimator)
-                                             .Append(mlContext.Transforms.Conversion.MapKeyToValue("PredictedLabel", "PredictedLabel"));
+            // Run 5-fold CV to evaluate the trainer on the cached training set
+            var cvResults = mlContext.MulticlassClassification.CrossValidate(
+                data: cachedTrainSet,
+                estimator: featurizer.AppendCacheCheckpoint(mlContext).Append(trainingPipeline),
+                numberOfFolds: 5,
+                labelColumnName: "Label"
+            );
 
-            var sw = Stopwatch.StartNew();
-            var model = trainingPipeline.Fit(splitDataView.TrainSet);
-            sw.Stop();
+            var avgMacro = cvResults.Average(r => r.Metrics.MacroAccuracy);
+            var avgMicro = cvResults.Average(r => r.Metrics.MicroAccuracy);
+            var avgLog = cvResults.Average(r => r.Metrics.LogLoss);
+            Console.WriteLine($"{name} (5-fold CV) → AvgMicro={avgMicro:F3}, AvgMacro={avgMacro:F3}, AvgLogLoss={avgLog:F2}");
 
-            Console.WriteLine($"{name} train time: {sw.Elapsed}");
-
-            var preds = model.Transform(splitDataView.TestSet);
-            var metrics = mlContext.MulticlassClassification.Evaluate(preds,
-                                                                      labelColumnName: "Label",
-                                                                      scoreColumnName: "Score",
-                                                                      predictedLabelColumnName: "PredictedLabel");
-
-            Console.WriteLine($"{name}: MicroAcc={metrics.MicroAccuracy:F3}, " +
-                              $"MacroAcc={metrics.MacroAccuracy:F3}, LogLoss={metrics.LogLoss:F2}");
-
-            if (metrics.MicroAccuracy > bestMacro)
+            if (avgMacro > bestMacro)
             {
-                bestMacro = metrics.MacroAccuracy;
-                bestModel = model;
+                bestMacro = avgMacro;
                 bestName = name;
+                bestPipeline = featurizer.AppendCacheCheckpoint(mlContext).Append(trainingPipeline);
             }
         }
 
-        // Save the best model
+        // Fit the best pipeline on the entire training set
+        Console.WriteLine($"\nRetraining best model [{bestName}] on entire trainining set…");
+        var bestModel = bestPipeline!.Fit(splitDataView.TrainSet);
+
+        // Evalute the model on the test set
+        var preds = bestModel.Transform(splitDataView.TestSet);
+        var metrics = mlContext.MulticlassClassification.Evaluate(preds,
+                                                                  labelColumnName: "Label",
+                                                                  scoreColumnName: "Score",
+                                                                  predictedLabelColumnName: "PredictedLabel");
+
+        Console.WriteLine($"Eval on Test Set: MicroAcc={metrics.MicroAccuracy:F3}, MacroAcc={metrics.MacroAccuracy:F3}, LogLoss={metrics.LogLoss:F2}");
+
+        // Save the best model found during CV
         var modelPath = Path.Combine(Environment.CurrentDirectory, "..", "Data", "MentalHealthModel.zip");
-        Console.WriteLine($"\nSaving best model '{bestName}' " + $"(MacroAcc={bestMacro:F3}) to {modelPath}");
-        mlContext.Model.Save(bestModel!, splitDataView.TrainSet.Schema, modelPath);
+        mlContext.Model.Save(bestModel, splitDataView.TrainSet.Schema, modelPath);
+        Console.WriteLine($"Saved best model [{bestName}] to {modelPath}");
     }
 
     /// <summary>
