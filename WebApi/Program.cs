@@ -1,6 +1,8 @@
 using Microsoft.Extensions.ML;
+using Microsoft.OpenApi.Models;
 using MentalHealthSentimentAnalysisAPI.Model;
 using MentalHealthSentimentAnalysisAPI.WebApi.Services;
+using System.Reflection;
 
 namespace MentalHealthSentimentAnalysisAPI.WebApi;
 
@@ -21,7 +23,15 @@ public class Program
         // Add MVC and Swagger
         builder.Services.AddControllers();
         builder.Services.AddEndpointsApiExplorer();
-        builder.Services.AddSwaggerGen();
+        builder.Services.AddSwaggerGen(c =>
+        {
+            c.SwaggerDoc("v1", new OpenApiInfo { Title = "Mental Health Sentiment Analysis API", Version = "v1" });
+
+            // Include XML comments for API documentation
+            var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
+            var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+            c.IncludeXmlComments(xmlPath);
+        });
 
         // Register the ML model
         builder.Services

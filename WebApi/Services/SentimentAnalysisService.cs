@@ -21,8 +21,8 @@ public class SentimentAnalysisService : ISentimentAnalysisService
     /// <summary>
     /// Predicts the mental health status and scores based on the given statement.
     /// </summary>
-    /// <param name="statement"></param>
-    /// <returns></returns>
+    /// <param name="statement">Statement to analyze.</param>
+    /// <returns>Prediction of the mental health status.</returns>
     /// <exception cref="ArgumentException"></exception>
     public MentalHealthPrediction Analyze(string statement)
     {

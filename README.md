@@ -28,8 +28,25 @@ dotnet build
 dotnet run
 ```
 
+The server will be hosted at `https://localhost:5001` (or `http://localhost:5000`). You can test the API using tools like Postman or Swagger UI.
+
+## API Usage and Documentation
+
+Once the API is running, you can access the Swagger UI at:
+
+```
+https://localhost:5001/swagger
+http://localhost:5000/swagger
+```
+
 ## Architecture
 
 <div align="center">
-  <img src="images/uml_diagram.png" alt="UML Diagram" width="720" />
+  <img src="images/uml_diagram.png" alt="UML Diagram" width="80%" />
+</div>
+
+## Swagger UI
+
+<div align="center">
+  <img src="images/swagger.png" alt="Swagger UI" width="80%" />
 </div>

@@ -21,7 +21,9 @@ public class MentalHealthController : ControllerBase
     /// Analyzes a mental health statement and returns the predicted status and scores.
     /// </summary>
     /// <param name="statement">Statement to analyze.</param>
-    /// <returns>Predicted status and scores.</returns>
+    /// <returns>Predicted mental health status and scores.</returns>
+    /// <response code="200">Returns the predicted mental health status and scores.</response>
+    /// <response code="400">Bad request if the statement is null or empty.</response>
     [HttpPost("analyze")]
     public ActionResult Analyze([FromBody] string statement)
     {
