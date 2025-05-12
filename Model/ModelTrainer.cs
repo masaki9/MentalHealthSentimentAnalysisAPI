@@ -18,10 +18,17 @@ public class ModelTrainer
     /// <param name="mlContext">The MLContext instance.</param>
     /// <param name="dataPath">The path to the data file.</param>
     /// <returns>A TrainTestData object containing the training and testing data.</returns>
-    public TrainTestData LoadData(MLContext mlContext, string dataPath)
+    public TrainTestData LoadAndCleanData(MLContext mlContext, string dataPath)
     {
         // Load the raw CSV data
         var rawData = mlContext.Data.LoadFromTextFile<MentalHealthData>(path: dataPath, separatorChar: ',', hasHeader: true, allowQuoting: true);
+
+        // Filter out null/empty statements
+        var nonEmpty = mlContext.Data.CreateEnumerable<MentalHealthData>(rawData, reuseRowObject: false)
+                                     .Where(r => !string.IsNullOrWhiteSpace(r.Statement));
+
+        // Convert back into IDataView
+        var filteredData = mlContext.Data.LoadFromEnumerable(nonEmpty);
 
         // Define a custom mapping action to clean the data
         Action<MentalHealthData, MentalHealthData> cleanData = (input, output) =>
@@ -42,7 +49,7 @@ public class ModelTrainer
 
         // Build and apply the cleaner
         var cleaner = mlContext.Transforms.CustomMapping(cleanData, contractName: "CleanData");
-        var cleaned = cleaner.Fit(rawData).Transform(rawData);
+        var cleaned = cleaner.Fit(rawData).Transform(filteredData);
 
         // Split the data into training and testing sets (80% training, 20% testing)
         return mlContext.Data.TrainTestSplit(cleaned, testFraction: 0.2, seed: 42);
@@ -59,7 +66,10 @@ public class ModelTrainer
     /// <returns>A text featurization estimator.</returns>
     public IEstimator<ITransformer> BuildTextFeaturizerTfIdf(MLContext mlContext, int ngramLength, bool useAllLengths, int maximumNgramsCount, bool removeStopWords)
     {
-        var estimator = mlContext.Transforms.Conversion.MapValueToKey("Label"); // Convert the label to a key type
+        // Convert the label to a key
+        var estimator = mlContext.Transforms.Conversion.MapValueToKey(outputColumnName: "LabelKey",
+                                                                      inputColumnName: "Label",
+                                                                      addKeyValueAnnotationsAsText: true);
 
         // Normalize the text to lowercase and remove punctuations
         var normalize = mlContext.Transforms.Text.NormalizeText(outputColumnName: "CleanText",
@@ -106,14 +116,16 @@ public class ModelTrainer
     public void Run(string[] args)
     {
         var mlContext = new MLContext();
-        var dataPath = Path.Combine(Environment.CurrentDirectory, "..", "Data", "MentalHealthData.csv");
-        var splitDataView = LoadData(mlContext, dataPath);
+        var projectRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
+        var dataPath = Path.Combine(projectRoot, "Data", "MentalHealthData.csv");
+        var modelPath = Path.Combine(projectRoot, "Data", "MentalHealthModel.zip");
+        var splitDataView = LoadAndCleanData(mlContext, dataPath);
 
-        // Build featurizer pipeline
+        // Build text featurizer pipeline
         var featurizer = BuildTextFeaturizerTfIdf(mlContext, ngramLength: 2, useAllLengths: true,
-                                                maximumNgramsCount: 20000, removeStopWords: true);
+                                                maximumNgramsCount: 50000, removeStopWords: true);
 
-        IEstimator<ITransformer>? bestPipeline = null;
+        IEstimator<ITransformer>? bestTrainer = null;
         var bestName = "";
         var bestMacro = 0.0;
 
@@ -127,7 +139,7 @@ public class ModelTrainer
             float l2 = 1f / C; // ML.NET L2Regularization = 1/C
             var options = new SdcaMaximumEntropyMulticlassTrainer.Options
             {
-                LabelColumnName = "Label",
+                LabelColumnName = "LabelKey",
                 FeatureColumnName = "Features",
                 L2Regularization = l2
             };
@@ -137,7 +149,7 @@ public class ModelTrainer
         // Add no regularization trainer
         var option = new SdcaMaximumEntropyMulticlassTrainer.Options
         {
-            LabelColumnName = "Label",
+            LabelColumnName = "LabelKey",
             FeatureColumnName = "Features"
         };
         trainerConfigs.Add(($"SDCA (No Regularization)", mlContext.MulticlassClassification.Trainers.SdcaMaximumEntropy(option)));
@@ -157,7 +169,7 @@ public class ModelTrainer
                 data: cachedTrainSet,
                 estimator: featurizer.AppendCacheCheckpoint(mlContext).Append(trainingPipeline),
                 numberOfFolds: 5,
-                labelColumnName: "Label"
+                labelColumnName: "LabelKey"
             );
 
             var avgMacro = cvResults.Average(r => r.Metrics.MacroAccuracy);
@@ -169,25 +181,33 @@ public class ModelTrainer
             {
                 bestMacro = avgMacro;
                 bestName = name;
-                bestPipeline = featurizer.AppendCacheCheckpoint(mlContext).Append(trainingPipeline);
+                bestTrainer = trainerEstimator;
             }
         }
 
-        // Fit the best pipeline on the entire training set
-        Console.WriteLine($"\nRetraining best model [{bestName}] on entire trainining set…");
-        var bestModel = bestPipeline!.Fit(splitDataView.TrainSet);
+        var dropCols = mlContext.Transforms.DropColumns("CleanText", "Tokens", "TokensClean", "TokensKey");
 
-        // Evalute the model on the test set
+        // Build the final pipeline with the best trainer
+        var finalPipeline = featurizer.AppendCacheCheckpoint(mlContext)
+                                      .Append(bestTrainer!)
+                                      .Append(mlContext.Transforms.Conversion
+                                      .MapKeyToValue("PredictedLabel", "PredictedLabel"))
+                                      .Append(dropCols);
+
+        // Fit the best model on the entire training set
+        Console.WriteLine($"\nRetraining best model [{bestName}] on the entire training set...");
+        var bestModel = finalPipeline.Fit(splitDataView.TrainSet);
+
+        // Evalute the best model on the test set
         var preds = bestModel.Transform(splitDataView.TestSet);
         var metrics = mlContext.MulticlassClassification.Evaluate(preds,
-                                                                  labelColumnName: "Label",
+                                                                  labelColumnName: "LabelKey",
                                                                   scoreColumnName: "Score",
                                                                   predictedLabelColumnName: "PredictedLabel");
 
         Console.WriteLine($"Eval on Test Set: MicroAcc={metrics.MicroAccuracy:F3}, MacroAcc={metrics.MacroAccuracy:F3}, LogLoss={metrics.LogLoss:F2}");
 
         // Save the best model found during CV
-        var modelPath = Path.Combine(Environment.CurrentDirectory, "..", "Data", "MentalHealthModel.zip");
         mlContext.Model.Save(bestModel, splitDataView.TrainSet.Schema, modelPath);
         Console.WriteLine($"Saved best model [{bestName}] to {modelPath}");
     }

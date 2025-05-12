@@ -33,11 +33,11 @@ public class Program
             c.IncludeXmlComments(xmlPath);
         });
 
-        // Register the ML model
         builder.Services
             .AddPredictionEnginePool<MentalHealthData, MentalHealthPrediction>()
             .FromFile(
-                filePath: Path.Combine(builder.Environment.ContentRootPath, "..", "Data", "MentalHealthModel.zip"),
+                filePath: Path.Combine(
+                AppContext.BaseDirectory, "..", "..", "..", "..", "Data", "MentalHealthModel.zip"),
                 watchForChanges: true);
 
         var app = builder.Build();
