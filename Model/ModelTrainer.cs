@@ -129,29 +129,12 @@ public class ModelTrainer
         var bestName = "";
         var bestMacro = 0.0;
 
-        float[] l2_regs = new[] { 0.01f, 0.001f, 0.0001f, 0.00001f, 0.000001f, 0.0000001f };
+        // float[] l2_regs = new[] { 0.01f, 0.001f, 0.0001f, 0.00001f, 0.000001f, 0.0000001f };
+        float[] l2Regs = new[] { 1e-2f, 1e-3f, 1e-4f, 1e-5f, 1e-6f, 1e-7f };
 
         var trainerConfigs = new List<(string name, IEstimator<ITransformer> est)>();
 
-        // SDCA hyperparameter sweep
-        foreach (var l2_reg in l2_regs)
-        {
-            var options = new SdcaMaximumEntropyMulticlassTrainer.Options
-            {
-                LabelColumnName = "LabelKey",
-                FeatureColumnName = "Features",
-                L2Regularization = l2_reg
-            };
-            trainerConfigs.Add(($"SDCA-L2_Reg={l2_reg}", mlContext.MulticlassClassification.Trainers.SdcaMaximumEntropy(options)));
-        }
-
-        // Add no regularization trainer
-        var option = new SdcaMaximumEntropyMulticlassTrainer.Options
-        {
-            LabelColumnName = "LabelKey",
-            FeatureColumnName = "Features"
-        };
-        trainerConfigs.Add(($"SDCA (No Regularization)", mlContext.MulticlassClassification.Trainers.SdcaMaximumEntropy(option)));
+        ModelTrainerUtils.AddL2Sweep("SDCA", l2Regs, l2 => ModelTrainerUtils.BuildSdca(mlContext, l2), trainerConfigs);
 
         var trainedTextFeatures = featurizer.Fit(splitDataView.TrainSet);
         var transformedTrainSet = trainedTextFeatures.Transform(splitDataView.TrainSet);
