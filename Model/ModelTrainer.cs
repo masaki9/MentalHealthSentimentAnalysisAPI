@@ -129,21 +129,20 @@ public class ModelTrainer
         var bestName = "";
         var bestMacro = 0.0;
 
-        float[] Cs = new[] { 100f, 1000f, 10000f, 100000f, 1000000f, 10000000f };
+        float[] l2_regs = new[] { 0.01f, 0.001f, 0.0001f, 0.00001f, 0.000001f, 0.0000001f };
 
         var trainerConfigs = new List<(string name, IEstimator<ITransformer> est)>();
 
         // SDCA hyperparameter sweep
-        foreach (var C in Cs)
+        foreach (var l2_reg in l2_regs)
         {
-            float l2 = 1f / C; // ML.NET L2Regularization = 1/C
             var options = new SdcaMaximumEntropyMulticlassTrainer.Options
             {
                 LabelColumnName = "LabelKey",
                 FeatureColumnName = "Features",
-                L2Regularization = l2
+                L2Regularization = l2_reg
             };
-            trainerConfigs.Add(($"SDCA-C={C}", mlContext.MulticlassClassification.Trainers.SdcaMaximumEntropy(options)));
+            trainerConfigs.Add(($"SDCA-L2_Reg={l2_reg}", mlContext.MulticlassClassification.Trainers.SdcaMaximumEntropy(options)));
         }
 
         // Add no regularization trainer
