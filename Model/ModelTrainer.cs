@@ -129,12 +129,13 @@ public class ModelTrainer
         var bestName = "";
         var bestMacro = 0.0;
 
-        // float[] l2_regs = new[] { 0.01f, 0.001f, 0.0001f, 0.00001f, 0.000001f, 0.0000001f };
         float[] l2Regs = new[] { 1e-2f, 1e-3f, 1e-4f, 1e-5f, 1e-6f, 1e-7f };
-
         var trainerConfigs = new List<(string name, IEstimator<ITransformer> est)>();
 
         ModelTrainerUtils.AddL2Sweep("SDCA", l2Regs, l2 => ModelTrainerUtils.BuildSdca(mlContext, l2), trainerConfigs);
+        ModelTrainerUtils.AddL2Sweep("LBFGS", l2Regs, l2 => ModelTrainerUtils.BuildLbfgs(mlContext, l2), trainerConfigs);
+        ModelTrainerUtils.AddL2Sweep("OVA+SDCA", l2Regs, l2 => ModelTrainerUtils.BuildOvaSdca(mlContext, l2), trainerConfigs);
+        ModelTrainerUtils.AddL2Sweep("OVA+LBFGS", l2Regs, l2 => ModelTrainerUtils.BuildOvaLbfgs(mlContext, l2), trainerConfigs);
 
         var trainedTextFeatures = featurizer.Fit(splitDataView.TrainSet);
         var transformedTrainSet = trainedTextFeatures.Transform(splitDataView.TrainSet);
