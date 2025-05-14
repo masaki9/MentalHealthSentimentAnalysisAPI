@@ -37,7 +37,7 @@ public class Program
             .AddPredictionEnginePool<MentalHealthData, MentalHealthPrediction>()
             .FromFile(
                 filePath: Path.Combine(
-                AppContext.BaseDirectory, "..", "..", "..", "..", "Data", "MentalHealthModel.zip"),
+                AppContext.BaseDirectory, "..", "..", "..", "..", "Artifacts", "MentalHealthModel.zip"),
                 watchForChanges: true);
 
         var app = builder.Build();

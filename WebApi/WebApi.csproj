@@ -9,8 +9,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="..\Data\MentalHealthModel.zip"> <!-- Include the trained model file in the Web API project -->
-      <Link>Data\MentalHealthModel.zip</Link>
+    <None Include="..\Artifacts\MentalHealthModel.zip"> <!-- Include the trained model file in the Web API project -->
+      <Link>Artifacts\MentalHealthModel.zip</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.15" />

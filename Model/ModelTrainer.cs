@@ -118,12 +118,12 @@ public class ModelTrainer
         var mlContext = new MLContext();
         var projectRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", ".."));
         var dataPath = Path.Combine(projectRoot, "Data", "MentalHealthData.csv");
-        var modelPath = Path.Combine(projectRoot, "Data", "MentalHealthModel.zip");
+        var modelPath = Path.Combine(projectRoot, "Artifacts", "MentalHealthModel.zip");
         var splitDataView = LoadAndCleanData(mlContext, dataPath);
 
         // Build text featurizer pipeline
         var featurizer = BuildTextFeaturizerTfIdf(mlContext, ngramLength: 2, useAllLengths: true,
-                                                maximumNgramsCount: 50000, removeStopWords: true);
+                                                maximumNgramsCount: 80000, removeStopWords: true);
 
         IEstimator<ITransformer>? bestTrainer = null;
         var bestName = "";
@@ -158,7 +158,7 @@ public class ModelTrainer
             var avgMacro = cvResults.Average(r => r.Metrics.MacroAccuracy);
             var avgMicro = cvResults.Average(r => r.Metrics.MicroAccuracy);
             var avgLog = cvResults.Average(r => r.Metrics.LogLoss);
-            Console.WriteLine($"{name} (5-fold CV) → AvgMicro={avgMicro:F3}, AvgMacro={avgMacro:F3}, AvgLogLoss={avgLog:F2}");
+            Console.WriteLine($"{name} (5-fold CV) → AvgMicro={avgMicro:F4}, AvgMacro={avgMacro:F4}, AvgLogLoss={avgLog:F4}");
 
             if (avgMacro > bestMacro)
             {
@@ -188,7 +188,7 @@ public class ModelTrainer
                                                                   scoreColumnName: "Score",
                                                                   predictedLabelColumnName: "PredictedLabel");
 
-        Console.WriteLine($"Eval on Test Set: MicroAcc={metrics.MicroAccuracy:F3}, MacroAcc={metrics.MacroAccuracy:F3}, LogLoss={metrics.LogLoss:F2}");
+        Console.WriteLine($"Eval on Test Set: MicroAcc={metrics.MicroAccuracy:F4}, MacroAcc={metrics.MacroAccuracy:F4}, LogLoss={metrics.LogLoss:F4}");
 
         // Save the best model found during CV
         mlContext.Model.Save(bestModel, splitDataView.TrainSet.Schema, modelPath);
