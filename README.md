@@ -52,15 +52,35 @@ dotnet build
 dotnet run
 ```
 
-The server will be hosted at `https://localhost:5001` (or `http://localhost:5000`). You can test the API using tools like Postman or Swagger UI.
+The server will be hosted at `https://localhost:5001` (or `http://localhost:5000`). You can test the API using tools like Postman, curl, or Swagger UI.
 
-## API Usage and Documentation
+## API Usage
 
-Once the API is running, you can access the Swagger UI at:
+Once the API is running, you can access the Swagger UI, which provides an interactive interface for testing the API endpoints. The Swagger UI is available at the following URLs:
 
 ```
 https://localhost:5001/swagger
 http://localhost:5000/swagger
+```
+
+The API will return a JSON object with:
+* `statement` – the original text
+* `predictedStatus` – the class with the highest score
+* `scores` – confidence scores for each class<br>
+  `[Normal, Anxiety, Depression, Stress, Suicidal, Bipolar, Personality Disorder]`.<br>
+The seven values sum to 1.
+
+Here is an example of how to call the API using curl and its output:
+```bash
+curl -X 'POST' 'https://localhost:5001/api/MentalHealth/analyze' -H 'accept: */*' -H 'Content-Type: application/json' -d '"Nothing interests me lately. Getting out of bed feels pointless."'
+```
+
+```json
+{
+  "statement":"Nothing interests me lately. Getting out of bed feels pointless.",
+  "predictedStatus":"Depression",
+  "scores":[0.0029239682,0.2543611,0.7271766,0.009098701,0.0048756558,0.0009974231,0.00056647585]
+}
 ```
 
 ## Architecture
