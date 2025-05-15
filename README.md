@@ -72,7 +72,9 @@ The seven values sum to 1.
 
 Here is an example of how to call the API using curl and its output:
 ```bash
-curl -X 'POST' 'https://localhost:5001/api/MentalHealth/analyze' -H 'accept: */*' -H 'Content-Type: application/json' -d '"Nothing interests me lately. Getting out of bed feels pointless."'
+curl -X POST https://localhost:5001/api/MentalHealth/analyze \
+     -H "Content-Type: application/json" \
+     -d '"Nothing interests me lately. Getting out of bed feels pointless."'
 ```
 
 ```json
