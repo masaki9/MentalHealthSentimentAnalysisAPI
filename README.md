@@ -25,7 +25,7 @@ I performed hyperparameter tuning over SDCA, LBFGS, OVA + SDCA and OVA + LBFGS a
 
 | Best Algorithm          |  Hyperparameters       |
 | ----------------------- | ---------------------- |
-| LBFGS (Maximum Entropy) | *No L2 Regularisation* |
+| LBFGS (Maximum Entropy) | *No L2 Regularization* |
 
 | Metric         | 5-fold CV | Test Set |
 | -------------- | --------- | -------- |
