@@ -23,15 +23,15 @@ I developed this to demonstrate end-to-end ML model training and deployment usin
 
 I performed hyperparameter tuning over SDCA, LBFGS, OVA + SDCA and OVA + LBFGS across varying L2-regularization strengths. The best cross-validated model was LBFGS with no L2 regularization.
 
-| Best Algorithm | **LBFGS (Maximum Entropy)** |
-| -------------- | --------------------------- |
-| Hyperparameters | *No L2 Regularisation* |
+| Best Algorithm          |  Hyperparameters       |
+| ----------------------- | ---------------------- |
+| LBFGS (Maximum Entropy) | *No L2 Regularisation* |
 
-| Metric | 5-fold CV | Test Set |
-| ------ | --------- | -------- |
-| Micro Accuracy | **0.7601** | **0.7580** |
-| Macro Accuracy | **0.7087** | **0.7059** |
-| Log Loss | **1.0966** | **1.1200** |
+| Metric         | 5-fold CV | Test Set |
+| -------------- | --------- | -------- |
+| Micro Accuracy | 0.7601    | 0.7580   |
+| Macro Accuracy | 0.7087    | 0.7059   |
+| Log Loss       | 1.0966    | 1.1200   |
 
 ### Summary
 * **Micro Accuracy** (overall): 75.8% of all statements are classified correctly.
